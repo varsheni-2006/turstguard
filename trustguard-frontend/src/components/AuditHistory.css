@@ -1,0 +1,48 @@
+.audit-panel { margin-top: 24px; margin-bottom: 40px; }
+
+.audit-toggle {
+  display: flex; align-items: center; justify-content: space-between;
+  width: 100%; background: none; border: none; cursor: pointer; padding: 0;
+  font-family: 'Inter', sans-serif;
+}
+.audit-count {
+  background: var(--navy); color: #fff;
+  border-radius: 999px; font-size: 0.72rem; font-weight: 700;
+  padding: 1px 8px; margin-left: 4px;
+}
+.audit-chevron { width: 18px; height: 18px; color: var(--gray-400); transition: transform 0.2s; }
+.audit-chevron.open { transform: rotate(180deg); }
+
+.audit-body { margin-top: 16px; }
+
+.audit-empty {
+  text-align: center; padding: 32px 20px; color: var(--gray-400);
+}
+.audit-empty svg { width: 36px; height: 36px; margin-bottom: 10px; color: var(--gray-300); }
+.audit-empty p { font-size: 0.875rem; }
+
+/* Table */
+.audit-table-wrap { overflow-x: auto; border-radius: var(--radius-sm); border: 1px solid var(--gray-200); }
+.audit-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+.audit-table thead tr { background: var(--gray-50); border-bottom: 1.5px solid var(--gray-200); }
+.audit-table th {
+  text-align: left; padding: 10px 14px;
+  font-size: 0.72rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.4px; color: var(--gray-500); white-space: nowrap;
+}
+.audit-row { border-bottom: 1px solid var(--gray-100); transition: background var(--transition); }
+.audit-row:last-child { border-bottom: none; }
+.audit-row:hover { background: var(--blue-50); }
+.audit-table td { padding: 10px 14px; vertical-align: top; }
+
+.audit-num   { font-weight: 700; color: var(--gray-400); width: 32px; }
+.audit-time  { color: var(--gray-500); white-space: nowrap; font-size: 0.78rem; }
+.audit-q     { max-width: 260px; }
+.audit-q-text { display: block; font-weight: 600; color: var(--navy); margin-bottom: 3px; }
+.audit-preview{
+  display: block; font-size: 0.75rem; color: var(--gray-400);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 240px;
+}
+.audit-conflicts { white-space: nowrap; }
+.audit-source { max-width: 160px; font-weight: 600; color: var(--navy); font-size: 0.8rem; }
+.audit-none  { color: var(--gray-300); }

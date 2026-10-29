@@ -1,0 +1,50 @@
+.upload-panel { margin-bottom: 20px; }
+
+/* Drop zone */
+.drop-zone {
+  border: 2px dashed var(--blue-200);
+  border-radius: var(--radius);
+  background: var(--blue-50);
+  padding: 28px 20px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color var(--transition), background var(--transition);
+  margin-bottom: 18px;
+  position: relative;
+}
+.drop-zone:hover { border-color: var(--blue); background: var(--blue-100); }
+.drop-zone input[type="file"] {
+  position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
+}
+.drop-zone-icon {
+  width: 44px; height: 44px; background: var(--blue-100);
+  border-radius: 12px; display: flex; align-items: center; justify-content: center;
+  margin: 0 auto 10px;
+}
+.drop-zone-icon svg { width: 22px; height: 22px; color: var(--blue); }
+.drop-zone-title { font-weight: 700; color: var(--navy); font-size: 0.9rem; margin-bottom: 4px; }
+.drop-zone-sub   { font-size: 0.8rem; color: var(--gray-400); }
+.drop-zone-name  { font-weight: 600; color: var(--blue); font-size: 0.875rem; }
+
+/* Metadata */
+.meta-section { margin-bottom: 16px; }
+.meta-heading {
+  font-size: 0.78rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.5px; color: var(--gray-500); margin-bottom: 12px;
+  padding-bottom: 8px; border-bottom: 1px solid var(--gray-100);
+}
+
+/* Actions */
+.upload-actions { margin-bottom: 16px; }
+
+/* Divider */
+.upload-divider {
+  display: flex; align-items: center; gap: 10px;
+  color: var(--gray-400); font-size: 0.8rem; margin-bottom: 12px;
+}
+.upload-divider::before, .upload-divider::after {
+  content: ''; flex: 1; height: 1px; background: var(--gray-200);
+}
+
+/* Sample hint */
+.sample-hint { font-size: 0.75rem; color: var(--gray-400); text-align: center; margin-top: 8px; }
