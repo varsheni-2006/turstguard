@@ -1,0 +1,26 @@
+# Python virtual environment — never commit this
+trustguard-backend/venv/
+
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Node modules — never commit this
+trustguard-frontend/node_modules/
+
+# Vite build output
+trustguard-frontend/dist/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Env / secrets
+.env
+.env.local
+
+# Test artifacts
+trustguard-backend/test_sample.pdf
+trustguard-backend/test_upload.py

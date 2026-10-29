@@ -1,0 +1,41 @@
+/* =============================================
+   Footer
+============================================= */
+.footer {
+  background-color: #0d1b3e;
+  color: rgba(255, 255, 255, 0.65);
+  padding: 28px 20px;
+  margin-top: auto;         /* push footer to bottom when content is short */
+}
+
+.footer-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.footer-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: #ffffff;
+}
+
+.footer-brand svg {
+  width: 16px;
+  height: 16px;
+  color: #60a5fa;
+}
+
+.footer-copy {
+  font-size: 0.8rem;
+}
+
+.footer-tagline {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.4);
+}
