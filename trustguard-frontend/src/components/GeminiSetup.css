@@ -1,83 +1,89 @@
 .gemini-bar {
-  background: linear-gradient(135deg, #0f172a, #1e3a5f);
-  border-bottom: 1px solid rgba(99,179,237,0.2);
-  padding: 10px 0;
+  background: linear-gradient(90deg, #0f172a, #1e3a5f);
+  border-bottom: 1px solid rgba(99,179,237,0.25);
+  padding: 10px 24px;
   position: relative;
-  z-index: 100;
 }
 
-.gemini-bar .container {
+.gemini-inner {
+  max-width: 1200px;
+  margin: 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  flex-wrap: wrap;
 }
 
-/* make bar use container layout */
-.gemini-bar {
-  display: block;
-}
-
-.gemini-bar-left {
+.gemini-left {
   display: flex;
   align-items: center;
   gap: 10px;
 }
 
-.gemini-bar-right {
+.gemini-right {
   display: flex;
   align-items: center;
-  gap: 8px;
 }
 
 .gemini-dot {
-  width: 32px; height: 32px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
-  display: flex; align-items: center; justify-content: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
 }
-.gemini-dot svg { width: 16px; height: 16px; }
-.gemini-dot--on  { background: rgba(74,222,128,0.15); color: #4ade80; box-shadow: 0 0 8px rgba(74,222,128,0.4); }
-.gemini-dot--off { background: rgba(148,163,184,0.1);  color: #94a3b8; }
+.gemini-dot--on  {
+  background: rgba(74,222,128,0.15);
+  color: #4ade80;
+  box-shadow: 0 0 8px rgba(74,222,128,0.5);
+}
+.gemini-dot--off {
+  background: rgba(148,163,184,0.15);
+  color: #94a3b8;
+}
 
 .gemini-label {
-  font-size: 0.82rem;
+  font-size: 0.85rem;
   font-weight: 600;
   color: rgba(255,255,255,0.9);
 }
-.gemini-msg {
-  display: block;
-  font-size: 0.72rem;
-  color: rgba(255,255,255,0.45);
-  margin-top: 1px;
-}
 
 /* Dropdown */
+.gemini-dropdown-wrap {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: flex;
+  justify-content: flex-end;
+}
+
 .gemini-dropdown {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 24px;
-  background: var(--white);
-  border: 1px solid var(--gray-200);
-  border-radius: var(--radius-lg);
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
   padding: 18px;
   width: 340px;
-  box-shadow: var(--shadow-lg);
-  z-index: 999;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+  margin-top: 8px;
+  margin-right: 0;
 }
+
 .gemini-dropdown-title {
-  font-size: 0.875rem;
+  font-size: 0.9rem;
   font-weight: 700;
-  color: var(--navy);
+  color: #0d1b3e;
   margin-bottom: 6px;
 }
+
 .gemini-dropdown-hint {
   font-size: 0.78rem;
-  color: var(--gray-500);
+  color: #64748b;
   margin-bottom: 12px;
   line-height: 1.5;
 }
-.gemini-dropdown-hint a { color: var(--blue); text-decoration: underline; }
-.gemini-form { display: flex; flex-direction: column; gap: 8px; }
-.gemini-form-actions { display: flex; gap: 8px; }
+
+.gemini-dropdown-hint a {
+  color: #2563eb;
+  text-decoration: underline;
+}
