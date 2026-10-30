@@ -1,0 +1,83 @@
+.gemini-bar {
+  background: linear-gradient(135deg, #0f172a, #1e3a5f);
+  border-bottom: 1px solid rgba(99,179,237,0.2);
+  padding: 10px 0;
+  position: relative;
+  z-index: 100;
+}
+
+.gemini-bar .container {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* make bar use container layout */
+.gemini-bar {
+  display: block;
+}
+
+.gemini-bar-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.gemini-bar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.gemini-dot {
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.gemini-dot svg { width: 16px; height: 16px; }
+.gemini-dot--on  { background: rgba(74,222,128,0.15); color: #4ade80; box-shadow: 0 0 8px rgba(74,222,128,0.4); }
+.gemini-dot--off { background: rgba(148,163,184,0.1);  color: #94a3b8; }
+
+.gemini-label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: rgba(255,255,255,0.9);
+}
+.gemini-msg {
+  display: block;
+  font-size: 0.72rem;
+  color: rgba(255,255,255,0.45);
+  margin-top: 1px;
+}
+
+/* Dropdown */
+.gemini-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 24px;
+  background: var(--white);
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-lg);
+  padding: 18px;
+  width: 340px;
+  box-shadow: var(--shadow-lg);
+  z-index: 999;
+}
+.gemini-dropdown-title {
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--navy);
+  margin-bottom: 6px;
+}
+.gemini-dropdown-hint {
+  font-size: 0.78rem;
+  color: var(--gray-500);
+  margin-bottom: 12px;
+  line-height: 1.5;
+}
+.gemini-dropdown-hint a { color: var(--blue); text-decoration: underline; }
+.gemini-form { display: flex; flex-direction: column; gap: 8px; }
+.gemini-form-actions { display: flex; gap: 8px; }

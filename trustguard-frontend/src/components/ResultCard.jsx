@@ -52,6 +52,9 @@ function ResultCard({ result }) {
       <div className="rc-header">
         <div className="rc-header-left">
           <span className={`badge badge--${st.cls} rc-status-badge`}>{st.label}</span>
+          {result.ai_powered && (
+            <span className="badge badge--purple">✨ Gemini AI</span>
+          )}
           <span className="rc-status-desc">{st.desc}</span>
         </div>
         <span className="rc-timestamp"><Icon name="clock"/> {ts}</span>

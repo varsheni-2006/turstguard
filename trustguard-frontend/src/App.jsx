@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
-import Navbar      from './components/Navbar';
-import Dashboard   from './components/Dashboard';
-import UploadPanel from './components/UploadPanel';
+import Navbar       from './components/Navbar';
+import Dashboard    from './components/Dashboard';
+import GeminiSetup  from './components/GeminiSetup';
+import UploadPanel  from './components/UploadPanel';
 import DocumentList from './components/DocumentList';
-import QueryPanel  from './components/QueryPanel';
+import QueryPanel   from './components/QueryPanel';
 import AuditHistory from './components/AuditHistory';
 
 const API = 'http://localhost:8000';
@@ -12,6 +13,7 @@ function App() {
   const [documents,    setDocuments]    = useState([]);
   const [auditHistory, setAuditHistory] = useState([]);
   const [stats,        setStats]        = useState({ docs: 0, queries: 0, conflicts: 0, resolved: 0 });
+  const [geminiActive, setGeminiActive] = useState(false);
 
   /* ── Load state on mount ── */
   useEffect(() => {
@@ -81,7 +83,8 @@ function App() {
 
   return (
     <>
-      <Navbar docCount={documents.length} />
+      <Navbar docCount={documents.length} geminiActive={geminiActive} />
+      <GeminiSetup onStatusChange={setGeminiActive} />
 
       <main style={{ flex: 1, paddingBottom: 40 }}>
         <div className="container">

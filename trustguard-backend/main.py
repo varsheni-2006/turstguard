@@ -1,25 +1,52 @@
 """
-TruthGuard – FastAPI Backend v2.0
-===================================
+TruthGuard – FastAPI Backend v3.0 (Gemini-powered)
+====================================================
+Pipeline:
+  Retriever   → keyword scoring to find best passage per document
+  Synthesizer → Gemini 1.5 Flash generates a natural answer (fallback: rule-based)
+  Critic      → Jaccard similarity detects contradictions
+  Resolver    → expert-system selects trusted source
+
 Endpoints:
-  POST   /api/documents            – upload one PDF with metadata
-  GET    /api/documents            – list stored documents
-  DELETE /api/documents/{doc_id}   – delete a document
-  POST   /api/samples              – load 3 built-in sample documents
-  POST   /api/ask                  – Retriever → Synthesizer → Critic → Resolver
-  GET    /api/audit                – return audit history
+  POST /api/config          – save Gemini API key (stored in memory)
+  GET  /api/config/status   – check if Gemini is configured
+  POST /api/documents       – upload PDF + metadata
+  GET  /api/documents       – list documents
+  DELETE /api/documents/{id}– delete document
+  POST /api/samples         – load built-in sample docs
+  POST /api/ask             – run full pipeline
+  GET  /api/audit           – query history
 """
 
-import re
-import uuid
-import fitz                                          # PyMuPDF
+import re, uuid
+import fitz                          # PyMuPDF
 from datetime import datetime
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+# ── Gemini (optional – only loaded when API key is provided) ─────────────────
+_gemini_model  = None   # set by /api/config
+_gemini_key    = ""     # stored in memory
+
+def _init_gemini(api_key: str):
+    """Try to initialise Gemini. Returns (success, message)."""
+    global _gemini_model, _gemini_key
+    try:
+        import google.generativeai as genai
+        genai.configure(api_key=api_key)
+        _gemini_model = genai.GenerativeModel("gemini-1.5-flash")
+        _gemini_key   = api_key
+        # Quick test
+        _gemini_model.generate_content("Say OK")
+        return True, "Gemini 1.5 Flash connected successfully."
+    except Exception as e:
+        _gemini_model = None
+        _gemini_key   = ""
+        return False, str(e)
+
 # ── App ───────────────────────────────────────────────────────────────────────
-app = FastAPI(title="TruthGuard API", version="2.0.0")
+app = FastAPI(title="TruthGuard API", version="3.0.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173"],
@@ -28,8 +55,8 @@ app.add_middleware(
 )
 
 # ── In-memory stores ──────────────────────────────────────────────────────────
-document_store: list[dict] = []   # includes full "text"
-audit_store:    list[dict] = []   # query history
+document_store: list[dict] = []
+audit_store:    list[dict] = []
 
 # ── Stopwords ─────────────────────────────────────────────────────────────────
 STOPWORDS = {
@@ -45,7 +72,7 @@ STOPWORDS = {
 
 # ── PDF helpers ───────────────────────────────────────────────────────────────
 def extract_text_from_pdf(file_bytes: bytes) -> str:
-    pdf = fitz.open(stream=file_bytes, filetype="pdf")
+    pdf  = fitz.open(stream=file_bytes, filetype="pdf")
     text = "\n".join(page.get_text() for page in pdf).strip()
     pdf.close()
     if not text:
@@ -54,7 +81,6 @@ def extract_text_from_pdf(file_bytes: bytes) -> str:
 
 
 def make_pdf_bytes(lines: list[str]) -> bytes:
-    """Create a simple PDF from a list of text lines and return raw bytes."""
     doc  = fitz.open()
     page = doc.new_page()
     y = 72
@@ -93,26 +119,21 @@ def jaccard_sim(a: str, b: str) -> float:
         return 1.0
     return len(ka & kb) / len(ka | kb)
 
-# ── Pipeline: Retriever ───────────────────────────────────────────────────────
+# ── Stage 1: Retriever ────────────────────────────────────────────────────────
 def retrieve(question: str) -> list[dict]:
-    """Find the best matching passage in each document."""
     keywords = get_keywords(question)
     if not keywords:
         return []
-
     results = []
     for doc in document_store:
         sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", doc["text"]) if s.strip()]
         if not sentences:
             continue
-
         scores   = [score_sentence(s, keywords) for s in sentences]
         best_idx = max(range(len(scores)), key=lambda i: scores[i])
-
-        start   = max(0, best_idx - 1)
-        end     = min(len(sentences), best_idx + 3)
-        passage = " ".join(sentences[start:end])
-
+        start    = max(0, best_idx - 1)
+        end      = min(len(sentences), best_idx + 3)
+        passage  = " ".join(sentences[start:end])
         results.append({
             "doc_id":           doc["id"],
             "filename":         doc["filename"],
@@ -124,49 +145,93 @@ def retrieve(question: str) -> list[dict]:
             "passage":          passage,
             "score":            scores[best_idx],
         })
-
     results.sort(key=lambda x: x["score"], reverse=True)
     return results
 
-# ── Pipeline: Synthesizer ─────────────────────────────────────────────────────
-def synthesize(retrieved: list[dict]) -> dict:
-    """Combine retrieved passages into a readable answer with citations."""
+# ── Stage 2: Synthesizer (Gemini-powered with fallback) ───────────────────────
+def synthesize(retrieved: list[dict], question: str) -> dict:
     found = [r for r in retrieved if r["score"] > 0]
+
     if not found:
         return {
             "answer":    "No relevant information found in the uploaded documents.",
             "citations": [],
+            "ai_powered": False,
         }
 
-    parts, citations = [], []
-    for r in found:
-        label = (r["title"] or r["filename"]) + (f' v{r["version"]}' if r["version"] else "")
-        parts.append(f'According to {label}: "{r["passage"].strip()}"')
-        citations.append({
+    citations = [
+        {
             "doc_id":   r["doc_id"],
             "filename": r["filename"],
             "title":    r["title"],
             "version":  r["version"],
             "passage":  r["passage"],
             "score":    r["score"],
-        })
+        }
+        for r in found
+    ]
 
-    return {"answer": "\n\n".join(parts), "citations": citations}
+    # ── Try Gemini first ──
+    if _gemini_model:
+        try:
+            evidence = "\n\n".join(
+                f"[{r['title'] or r['filename']}"
+                + (f" v{r['version']}" if r['version'] else "")
+                + f" | {r['publication_date'] or 'unknown date'}"
+                + f" | Authority Tier {r['authority_tier']}]:\n{r['passage']}"
+                for r in found
+            )
 
-# ── Pipeline: Critic ──────────────────────────────────────────────────────────
+            prompt = f"""You are TruthGuard, a document verification assistant.
+A user asked: "{question}"
+
+Below are relevant passages retrieved from uploaded documents:
+
+{evidence}
+
+Instructions:
+- Answer the question using ONLY the evidence provided above.
+- Be clear, concise, and professional.
+- Mention which document each piece of information comes from.
+- If documents disagree, point out the disagreement clearly.
+- Do NOT make up information not present in the evidence.
+- Keep your answer under 200 words.
+
+Answer:"""
+
+            response = _gemini_model.generate_content(prompt)
+            return {
+                "answer":    response.text.strip(),
+                "citations": citations,
+                "ai_powered": True,
+            }
+        except Exception as e:
+            # Fall through to rule-based if Gemini fails
+            pass
+
+    # ── Fallback: rule-based synthesis ──
+    parts = []
+    for r in found:
+        label = (r["title"] or r["filename"]) + (f' v{r["version"]}' if r["version"] else "")
+        parts.append(f'According to {label}: "{r["passage"].strip()}"')
+
+    return {
+        "answer":    "\n\n".join(parts),
+        "citations": citations,
+        "ai_powered": False,
+    }
+
+# ── Stage 3: Critic ───────────────────────────────────────────────────────────
 def criticize(retrieved: list[dict]) -> dict:
-    """Detect contradictions, outdated documents, and unsupported claims."""
     found    = [r for r in retrieved if r["score"] > 0]
     existing = {doc["filename"] for doc in document_store}
 
-    # Outdated: doc is superseded by another doc that exists in the store
     outdated = [
         {"filename": r["filename"], "title": r["title"], "superseded_by": r["superseded_by"]}
         for r in found
         if r["superseded_by"] and r["superseded_by"] in existing
     ]
 
-    # Contradictions: pairs with low passage similarity
     contradictions = []
     for i in range(len(found)):
         for j in range(i + 1, len(found)):
@@ -187,18 +252,15 @@ def criticize(retrieved: list[dict]) -> dict:
         "unsupported":    len(found) == 0,
     }
 
-# ── Pipeline: Resolver ────────────────────────────────────────────────────────
+# ── Stage 4: Resolver ─────────────────────────────────────────────────────────
 def resolve(retrieved: list[dict], critic: dict) -> dict:
-    """Select the most trusted source or report 'Cannot Resolve'."""
     found = [r for r in retrieved if r["score"] > 0]
 
     if not found or critic["unsupported"]:
         return {
-            "trusted_source":    None,
-            "trusted_title":     None,
-            "reason":            "No relevant evidence was found in any document.",
-            "status":            "no_evidence",
-            "all_positions":     [],
+            "trusted_source": None, "trusted_title": None,
+            "reason": "No relevant evidence was found in any document.",
+            "status": "no_evidence", "all_positions": [],
         }
 
     if not critic["contradictions"]:
@@ -206,17 +268,14 @@ def resolve(retrieved: list[dict], critic: dict) -> dict:
         return {
             "trusted_source": best["filename"],
             "trusted_title":  best["title"],
-            "reason":         f'All sources are consistent. Top source: "{best["title"] or best["filename"]}".',
-            "status":         "verified",
-            "all_positions":  [],
+            "reason": f'All sources are consistent. Top source: "{best["title"] or best["filename"]}".',
+            "status": "verified", "all_positions": [],
         }
 
-    # Contradictions exist — try to resolve
     existing     = {doc["filename"] for doc in document_store}
     outdated_set = {r["filename"] for r in found
                     if r["superseded_by"] and r["superseded_by"] in existing}
-
-    candidates = [r for r in found if r["filename"] not in outdated_set] or found
+    candidates   = [r for r in found if r["filename"] not in outdated_set] or found
 
     def sort_key(r):
         tier = r["authority_tier"] if r["authority_tier"] else 99
@@ -228,39 +287,32 @@ def resolve(retrieved: list[dict], critic: dict) -> dict:
 
     candidates.sort(key=sort_key)
 
-    # Only one non-superseded candidate
     if len(candidates) == 1:
-        c = candidates[0]
+        c        = candidates[0]
         excluded = ", ".join(f'"{r["title"] or r["filename"]}"' for r in found if r["filename"] in outdated_set)
         return {
-            "trusted_source": c["filename"],
-            "trusted_title":  c["title"],
+            "trusted_source": c["filename"], "trusted_title": c["title"],
             "reason": (
                 f'Conflict resolved. "{c["title"] or c["filename"]}" is the active source.'
-                + (f' Superseded documents excluded: {excluded}.' if excluded else "")
+                + (f" Superseded documents excluded: {excluded}." if excluded else "")
             ),
-            "status": "resolved",
-            "all_positions": [],
+            "status": "resolved", "all_positions": [],
         }
 
     best, second = candidates[0], candidates[1]
     bt = best["authority_tier"] or 99
     st = second["authority_tier"] or 99
 
-    # Resolved by authority
     if bt < st:
         return {
-            "trusted_source": best["filename"],
-            "trusted_title":  best["title"],
+            "trusted_source": best["filename"], "trusted_title": best["title"],
             "reason": (
                 f'Resolved by authority. "{best["title"] or best["filename"]}" (tier {bt}) '
                 f'outranks "{second["title"] or second["filename"]}" (tier {st}).'
             ),
-            "status": "resolved",
-            "all_positions": [],
+            "status": "resolved", "all_positions": [],
         }
 
-    # Same authority — resolve by date
     try:
         bd = datetime.fromisoformat(best["publication_date"])   if best["publication_date"]   else None
         sd = datetime.fromisoformat(second["publication_date"]) if second["publication_date"] else None
@@ -269,50 +321,72 @@ def resolve(retrieved: list[dict], critic: dict) -> dict:
 
     if bd and sd and bd > sd:
         return {
-            "trusted_source": best["filename"],
-            "trusted_title":  best["title"],
+            "trusted_source": best["filename"], "trusted_title": best["title"],
             "reason": (
                 f'Resolved by date. "{best["title"] or best["filename"]}" ({best["publication_date"]}) '
                 f'is newer than "{second["title"] or second["filename"]}" ({second["publication_date"]}).'
             ),
-            "status": "resolved",
-            "all_positions": [],
+            "status": "resolved", "all_positions": [],
         }
 
-    # Cannot resolve
     all_positions = [
         {"filename": r["filename"], "title": r["title"], "version": r["version"], "passage": r["passage"]}
         for r in candidates
     ]
     sources_str = " | ".join(
-        f'"{r["title"] or r["filename"]}": {r["passage"][:80]}…'
-        for r in candidates[:3]
+        f'"{r["title"] or r["filename"]}": {r["passage"][:80]}…' for r in candidates[:3]
     )
     return {
-        "trusted_source": None,
-        "trusted_title":  None,
+        "trusted_source": None, "trusted_title": None,
         "reason": (
             "Cannot Resolve: Multiple equally-authoritative sources provide conflicting information. "
             f"Conflicting positions: {sources_str}"
         ),
-        "status":        "cannot_resolve",
-        "all_positions": all_positions,
+        "status": "cannot_resolve", "all_positions": all_positions,
     }
 
 # ── Metadata helper ───────────────────────────────────────────────────────────
 def _meta(doc: dict) -> dict:
     return {k: v for k, v in doc.items() if k != "text"}
 
-# ── Request model ─────────────────────────────────────────────────────────────
+# ── Request models ────────────────────────────────────────────────────────────
 class AskRequest(BaseModel):
     question: str
 
-# ── Routes ────────────────────────────────────────────────────────────────────
+class ConfigRequest(BaseModel):
+    api_key: str
+
+# ═════════════════════════════════════════════════════════════════════════════
+# Routes
+# ═════════════════════════════════════════════════════════════════════════════
+
 @app.get("/")
 def root():
-    return {"status": "TruthGuard API v2 running"}
+    return {
+        "status": "TruthGuard API v3 running",
+        "gemini": "connected" if _gemini_model else "not configured",
+    }
+
+# ── Config ────────────────────────────────────────────────────────────────────
+@app.post("/api/config")
+def set_config(body: ConfigRequest):
+    """Save the Gemini API key and initialise the model."""
+    if not body.api_key.strip():
+        raise HTTPException(400, "API key cannot be empty.")
+    ok, msg = _init_gemini(body.api_key.strip())
+    if not ok:
+        raise HTTPException(400, f"Could not connect to Gemini: {msg}")
+    return {"message": msg, "model": "gemini-1.5-flash"}
 
 
+@app.get("/api/config/status")
+def get_config_status():
+    return {
+        "gemini_configured": _gemini_model is not None,
+        "model": "gemini-1.5-flash" if _gemini_model else None,
+    }
+
+# ── Documents ─────────────────────────────────────────────────────────────────
 @app.post("/api/documents")
 async def upload_document(
     file:             UploadFile = File(...),
@@ -325,11 +399,9 @@ async def upload_document(
     filename = file.filename or "unknown.pdf"
     if not filename.lower().endswith(".pdf"):
         raise HTTPException(400, "Only PDF files are supported.")
-
     file_bytes = await file.read()
     if not file_bytes:
         raise HTTPException(400, "File is empty.")
-
     try:
         text = extract_text_from_pdf(file_bytes)
     except ValueError as e:
@@ -337,9 +409,7 @@ async def upload_document(
     except Exception:
         raise HTTPException(422, "Could not read this PDF – it may be corrupt.")
 
-    # Replace if same filename already exists
     document_store[:] = [d for d in document_store if d["filename"] != filename]
-
     doc = {
         "id":               str(uuid.uuid4()),
         "filename":         filename,
@@ -372,7 +442,6 @@ def delete_document(doc_id: str):
 
 @app.post("/api/samples")
 def load_samples():
-    """Generate 3 built-in sample PDFs with intentional conflicts for demonstration."""
     samples = [
         {
             "filename": "medication_policy_v1.pdf",
@@ -384,20 +453,12 @@ def load_samples():
             "lines": [
                 "# Medication Administration Policy",
                 "## Version 1.0 | Effective: March 15, 2022",
-                "",
-                "## 1. Dosage Guidelines",
-                "Recommended dosage: 250mg administered twice daily.",
-                "Treatment duration: 7 days minimum.",
+                "## Recommended dosage: 250mg administered twice daily.",
+                "## Treatment duration: 7 days minimum.",
                 "Administer with food to reduce gastric discomfort.",
-                "",
-                "## 2. Storage Requirements",
                 "Store at room temperature, 15 to 25 degrees Celsius.",
-                "Keep away from direct sunlight and moisture.",
-                "",
-                "## 3. Contraindications",
                 "Do not administer to patients with known renal impairment.",
                 "Consult physician before prescribing to elderly patients.",
-                "",
                 "Note: This document was superseded by Version 2.0 published June 2024.",
             ],
         },
@@ -412,21 +473,11 @@ def load_samples():
                 "# Medication Administration Policy",
                 "## Version 2.0 | Effective: June 1, 2024",
                 "## This document supersedes Version 1.0 (March 2022).",
-                "",
-                "## 1. Revised Dosage Guidelines",
-                "Recommended dosage: 500mg administered once daily.",
+                "## Recommended dosage: 500mg administered once daily.",
                 "Treatment duration: 5 days.",
                 "May be taken with or without food.",
-                "Clinical trials confirm improved efficacy with once-daily regimen.",
-                "",
-                "## 2. Storage Requirements",
                 "Refrigerate at 2 to 8 degrees Celsius. Do not freeze.",
-                "",
-                "## 3. Updated Contraindications",
                 "Safe for patients with mild renal impairment at standard dose.",
-                "Reduce dose to 250mg for patients with moderate renal impairment.",
-                "",
-                "## 4. Governance",
                 "Approved by the Clinical Governance Committee. Authority Tier 2.",
             ],
         },
@@ -440,22 +491,10 @@ def load_samples():
             "lines": [
                 "# Pediatric Medication Guidelines",
                 "## Version 1.5 | September 10, 2023",
-                "",
-                "## 1. Pediatric Dosage",
-                "For patients under 18 years: 125mg twice daily.",
+                "## For patients under 18 years: 125mg twice daily.",
                 "Weight-adjusted dosing: 5mg per kilogram of body weight per day.",
-                "Maximum pediatric dose: 250mg per day.",
-                "Treatment duration: 7 days.",
-                "",
-                "## 2. Adult Patients",
-                "Adult patients must refer to the current Medication Administration Policy.",
-                "Do not apply pediatric dosing guidelines to adult patients.",
-                "",
-                "## 3. Monitoring",
+                "Maximum pediatric dose: 250mg per day. Treatment duration: 7 days.",
                 "Monitor liver function tests weekly during treatment.",
-                "Discontinue if enzymes exceed 3x the upper limit of normal.",
-                "",
-                "## 4. Governance",
                 "Approved by the Pediatric Clinical Committee. Authority Tier 2.",
             ],
         },
@@ -484,24 +523,25 @@ def load_samples():
     return {"message": f"{len(added)} sample documents loaded.", "documents": added}
 
 
+# ── Ask ───────────────────────────────────────────────────────────────────────
 @app.post("/api/ask")
 def ask(body: AskRequest):
     question = body.question.strip()
     if not question:
         raise HTTPException(400, "Question cannot be empty.")
     if not document_store:
-        raise HTTPException(400, "No documents uploaded yet. Please upload PDFs or load samples first.")
+        raise HTTPException(400, "No documents uploaded yet.")
 
-    # Run the four-stage pipeline
-    retrieved        = retrieve(question)
-    synthesized      = synthesize(retrieved)
-    critic_result    = criticize(retrieved)
-    resolver_result  = resolve(retrieved, critic_result)
+    retrieved       = retrieve(question)
+    synthesized     = synthesize(retrieved, question)
+    critic_result   = criticize(retrieved)
+    resolver_result = resolve(retrieved, critic_result)
 
     result = {
         "id":                str(uuid.uuid4()),
         "question":          question,
         "answer":            synthesized["answer"],
+        "ai_powered":        synthesized["ai_powered"],
         "citations":         synthesized["citations"],
         "contradictions":    critic_result["contradictions"],
         "outdated":          critic_result["outdated"],
@@ -514,7 +554,6 @@ def ask(body: AskRequest):
         "timestamp":         datetime.now().isoformat(),
     }
 
-    # Save to audit
     audit_store.append({
         "id":                result["id"],
         "question":          question,
@@ -523,6 +562,7 @@ def ask(body: AskRequest):
         "trusted_source":    resolver_result["trusted_source"],
         "trusted_title":     resolver_result["trusted_title"],
         "answer_preview":    synthesized["answer"][:200],
+        "ai_powered":        synthesized["ai_powered"],
         "timestamp":         result["timestamp"],
     })
 
